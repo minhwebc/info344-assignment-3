@@ -1,0 +1,7 @@
+For extra credit, i implemented multi threaded crawler using threadpool, but i dont think it matches the speed
+that CK mentioned (100 per min). It only can crawl about 20 per mins. 
+I also implement the dashboard so it will update the stats over time, the dashboard will make call to worker role
+every 5 seconds to update the stats. 
+I also store the HTML body text while removing all the HTML tags. To see this please go to http://crawler1234.cloudapp.net/Admin.asmx
+and check out the GetLinksTable function. In there you will see all the link entities that were crawled and added to the cloud table.
+This also includes the body text of the link.  

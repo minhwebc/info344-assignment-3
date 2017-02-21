@@ -1,0 +1,7 @@
+I put everything class i needed to used in a class library and call them from there. In here, this includes 
+the crawler class, the straoge class which will initilize all the cloud storage that is needed. Then a dashboard 
+entity to store the different state of the crawler. 
+For the worker role, it will check if there is a command queue to look for. If there is then it will just read
+the message and tell the crawler what to do accordingly. The URLs are stored in azure table storage with url, title,
+date crawled. The worker roles communicate with the web role by queue and the finished products are stored in azure table
+For C# best practice, i make sure to put a lot of code into an object or a class so it can be reusable. 

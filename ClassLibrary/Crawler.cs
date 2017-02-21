@@ -32,9 +32,9 @@ namespace ClassLibrary {
 
         public Crawler()
         {
-            myWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
             ServicePointManager.Expect100Continue = false;
-            ServicePointManager.DefaultConnectionLimit = 100;
+            System.Net.ServicePointManager.DefaultConnectionLimit = 100;
+            myWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
             visitedLinks = new ConcurrentDictionary<string, string>();
             uniqueUrlInSiteMaps = new ConcurrentDictionary<string, string>();
             disallowedUrls = new ConcurrentBag<string>();
@@ -47,6 +47,10 @@ namespace ClassLibrary {
             numberOfUrlsCrawled = 0;
             dashboard = new Dashboard();
             updateDashboard();
+            int worker = 0;
+            int io = 0;
+            ThreadPool.GetMaxThreads(out worker, out io);
+            ThreadPool.SetMaxThreads(((int)(worker + worker * (.2))), io);
         }
 
         /// <summary>
@@ -81,7 +85,7 @@ namespace ClassLibrary {
         /// <summary>
         /// Method will crawl the url
         /// </summary>
-        /// <param name="url"></param>
+        /// <param name="url">string urk</param>
         public void CrawlUrl(string url)
         {
             if (CrawlerState.Equals("Idle"))
@@ -368,10 +372,7 @@ namespace ClassLibrary {
                         pageLink = CleanUrl(pageLink, FullUrl.Authority);
                         if (pageLink != "")
                         {
-                            Uri uriResult;
-                            bool result = Uri.TryCreate(pageLink, UriKind.Absolute, out uriResult)
-                                && (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps);
-                            if (result)
+                            if (!visitedLinks.ContainsKey(pageLink)) 
                             {
                                 CloudQueueMessage msg = new CloudQueueMessage(pageLink);
                                 Storage.LinkQueue.AddMessage(msg);

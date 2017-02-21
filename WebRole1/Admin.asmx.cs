@@ -34,6 +34,12 @@ namespace WebRole1
             return "Hello World";
         }
 
+        [WebMethod]
+        public int GetCurrentThread()
+        {
+            int number = Process.GetCurrentProcess().Threads.Count;
+            return number;
+        }
 
         [WebMethod]
         public void StartCrawling()
@@ -45,7 +51,6 @@ namespace WebRole1
             Storage.LinkQueue.AddMessage(msg);
             Storage.LinkQueue.AddMessage(msg2);
             Storage.CommandQueue.AddMessage(new CloudQueueMessage("Initialize Crawl"));
-            //crawler.SendCommand("New Crawl");
         }
 
         [WebMethod]
@@ -69,13 +74,8 @@ namespace WebRole1
         [WebMethod]
         public string UpdateDashboard()
         {
-            // Create a retrieve operation that takes a customer entity.
             TableOperation retrieveOperation = TableOperation.Retrieve<Dashboard>("1", "1");
-
-            // Execute the operation.
             TableResult retrievedResult = Storage.DashboardTable.Execute(retrieveOperation);
-
-            // Assign the result to a CustomerEntity object.
             Dashboard dashboard = (Dashboard)retrievedResult.Result;
             JavaScriptSerializer s = new JavaScriptSerializer();
             return s.Serialize(dashboard);
