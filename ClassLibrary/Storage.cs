@@ -15,10 +15,10 @@ namespace ClassLibrary
         public static CloudStorageAccount StorageAccount = CloudStorageAccount.Parse("DefaultEndpointsProtocol=https;AccountName=minhwebc1;AccountKey=uUTJXnkY/kZlNKBNjUlu3JcEBc6n40jTQLrfPNsWUQy/jj42JLKQGFIygALKN4dUkFASp5guHZybxKjVvb4p0Q==");
         public static CloudQueueClient QueueClient = StorageAccount.CreateCloudQueueClient();
         public static CloudTableClient TableClient = StorageAccount.CreateCloudTableClient();
-        public static CloudQueue LinkQueue = QueueClient.GetQueueReference("linkqueue");
-        public static CloudQueue CommandQueue = QueueClient.GetQueueReference("commandqueue");
-        public static CloudTable LinkTable = TableClient.GetTableReference("linktable");
-        public static CloudTable DashboardTable = TableClient.GetTableReference("dashboardtable");
+        public static CloudQueue LinkQueue = QueueClient.GetQueueReference("linkqueuee");
+        public static CloudQueue CommandQueue = QueueClient.GetQueueReference("commandqueuee");
+        public static CloudTable LinkTable = TableClient.GetTableReference("linktablee");
+        public static CloudTable DashboardTable = TableClient.GetTableReference("dashboardtablee");
 
         public static void CreateStorage()
         {

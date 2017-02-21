@@ -47,10 +47,6 @@ namespace ClassLibrary {
             numberOfUrlsCrawled = 0;
             dashboard = new Dashboard();
             updateDashboard();
-            int worker = 0;
-            int io = 0;
-            ThreadPool.GetMaxThreads(out worker, out io);
-            ThreadPool.SetMaxThreads(((int)(worker + worker * (.2))), io);
         }
 
         /// <summary>
