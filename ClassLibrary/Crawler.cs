@@ -29,11 +29,10 @@ namespace ClassLibrary {
         private int counterTable;
         private int numberOfUrlsCrawled;
         private static EventWaitHandle myWaitHandle;
+        private int errorNumber; 
 
         public Crawler()
         {
-            ServicePointManager.Expect100Continue = false;
-            System.Net.ServicePointManager.DefaultConnectionLimit = 100;
             myWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
             visitedLinks = new ConcurrentDictionary<string, string>();
             uniqueUrlInSiteMaps = new ConcurrentDictionary<string, string>();
@@ -45,8 +44,10 @@ namespace ClassLibrary {
             errorsUrl.Limit = 10;
             counterTable = 0;
             numberOfUrlsCrawled = 0;
+            errorNumber = 0;
             dashboard = new Dashboard();
             updateDashboard();
+            ThreadPool.SetMaxThreads(10, 10);
         }
 
         /// <summary>
@@ -95,11 +96,7 @@ namespace ClassLibrary {
             }
             else
             {
-                
-                if (!visitedLinks.ContainsKey(uri.AbsoluteUri))
-                {
-                    ThreadPool.QueueUserWorkItem(o => CrawlPage(uri.AbsoluteUri));
-                }
+                ThreadPool.QueueUserWorkItem(o => CrawlPage(uri.AbsoluteUri));
             }
         }
 
@@ -301,7 +298,6 @@ namespace ClassLibrary {
         /// <param name="url"></param>
         public void CrawlPage(string url)
         {
-            myWaitHandle.WaitOne();
             if (CrawlerState.Equals("Idle"))
             {
                 return;
@@ -315,10 +311,10 @@ namespace ClassLibrary {
                 return;
             }
             Interlocked.Add(ref numberOfUrlsCrawled, 1);
+            last10Urls.Enqueue(url);
             if (!visitedLinks.ContainsKey(url))
             {
                 visitedLinks.TryAdd(url, ""); 
-                last10Urls.Enqueue(url);
                 HtmlDocument htmlText = GetWebText(url);
                 if (htmlText == null)
                     return;
@@ -339,7 +335,7 @@ namespace ClassLibrary {
                     WebPageEntity newPage = new WebPageEntity(pageTitle, link.Authority);
                     newPage.Title = pageTitle;
                     newPage.Url = url;
-                    newPage.Text = GetPlainTextFromHtml(htmlText.DocumentNode.OuterHtml); 
+                    newPage.Text = GetPlainTextFromHtml(htmlText.DocumentNode.OuterHtml);
                     DateTime timeNow = DateTime.Now;
                     newPage.Date = timeNow.ToString("en-US");
                     TableOperation insertOperation = TableOperation.Insert(newPage);
@@ -350,39 +346,48 @@ namespace ClassLibrary {
                     }
                     catch (Exception error)
                     {
-                        
+
                     }
                 }
                 //Find all the link in the current page and add them to the queue
                 foreach (HtmlNode link in linkNodes)
                 {
-                    if (CrawlerState.Equals("Idle"))
-                    {
-                        return;
-                    }
-                    HtmlAttribute href = link.Attributes["href"];
-                    try
-                    {
-                        string pageLink = href.Value;
-                        Uri FullUrl = new Uri(url);
-                        pageLink = CleanUrl(pageLink, FullUrl.Authority);
-                        if (pageLink != "")
-                        {
-                            if (!visitedLinks.ContainsKey(pageLink)) 
-                            {
-                                CloudQueueMessage msg = new CloudQueueMessage(pageLink);
-                                Storage.LinkQueue.AddMessage(msg);
-                            }
-                        }
-                    }
-                    catch (Exception exc)
-                    {
-
-                    }
+                    ThreadPool.QueueUserWorkItem(o => AddLink(link, url));
                 }
             }
         }
 
+        public void AddUrl(HtmlNode title, string url, HtmlDocument htmlText)
+        {
+            
+        }
+
+        public void AddLink(HtmlNode link, string url)
+        {
+            if (CrawlerState.Equals("Idle"))
+            {
+                return;
+            }
+            HtmlAttribute href = link.Attributes["href"];
+            try
+            {
+                string pageLink = href.Value;
+                Uri FullUrl = new Uri(url);
+                pageLink = CleanUrl(pageLink, FullUrl.Authority);
+                if (pageLink != "")
+                {
+                    if (!visitedLinks.ContainsKey(pageLink))
+                    {
+                        CloudQueueMessage msg = new CloudQueueMessage(pageLink);
+                        Storage.LinkQueue.AddMessage(msg);
+                    }
+                }
+            }
+            catch (Exception exc)
+            {
+
+            }
+        }
         /// <summary>
         /// Return the summary of the current dahsboard
         /// </summary>  
@@ -395,9 +400,10 @@ namespace ClassLibrary {
             dashboard.CrawlingState = GetCrawlerState();
             dashboard.last10Urls = JsonConvert.SerializeObject(last10Urls.GetSnapshot());
             dashboard.errorUris = JsonConvert.SerializeObject(errorsUrl.GetSnapshot());
+            dashboard.errorNumber = errorNumber;
             dashboard.SizeOfQueue = (int)link.ApproximateMessageCount;
             dashboard.SizeOfTable = counterTable;
-            dashboard.NumberOfUrlsCrawled = visitedLinks.ToArray().Length;
+            dashboard.NumberOfUrlsCrawled = numberOfUrlsCrawled;
             TableOperation insertOperation = TableOperation.InsertOrReplace(dashboard);
             Storage.DashboardTable.Execute(insertOperation);
         }
@@ -451,6 +457,7 @@ namespace ClassLibrary {
             }
             catch (WebException e)
             {
+                Interlocked.Add(ref errorNumber, 1);
                 errorsUrl.Enqueue(url + " | " + "Error code: "+ e);
             }
             return doc;

@@ -26,7 +26,9 @@ namespace WorkerRole1
             Storage.CreateStorage();
             while (true)
             {
-                
+                ServicePointManager.Expect100Continue = false;
+                System.Net.ServicePointManager.DefaultConnectionLimit = 100;
+
                 CloudQueueMessage command = Storage.CommandQueue.GetMessage(TimeSpan.FromMinutes(5));
                 if (command != null)
                 {
@@ -62,7 +64,6 @@ namespace WorkerRole1
                         }
                     }
                 }
-                Thread.Sleep(1000);
             }
         }
 

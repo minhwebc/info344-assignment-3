@@ -349,7 +349,7 @@
                   last10.reverse();
                   $("#ram").attr("data-percent", result.RamAvailable);
                   var errors = JSON.parse(result.errorUris);
-                  $("#numberError").text(errors.length);
+                  $("#numberError").text(result.errorNumber);
                   last10.forEach(function (url) {
                       $("#last10").append("<li class="+"list-item"+">" + url + "</li>");
                   })
