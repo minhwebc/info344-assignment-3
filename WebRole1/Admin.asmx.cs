@@ -44,10 +44,10 @@ namespace WebRole1
         [WebMethod]
         public void StartCrawling()
         {
-            Storage.CreateStorage();
             CloudQueueMessage msg = new CloudQueueMessage("http://www.cnn.com/robots.txt");
             CloudQueueMessage msg2 = new CloudQueueMessage("http://bleacherreport.com/robots.txt");
             Storage.LinkQueue.Clear();
+            Storage.CommandQueue.Clear();
             Storage.LinkQueue.AddMessage(msg);
             Storage.LinkQueue.AddMessage(msg2);
             Storage.CommandQueue.AddMessage(new CloudQueueMessage("Initialize Crawl"));
@@ -62,9 +62,9 @@ namespace WebRole1
         [WebMethod]
         public List<WebPageEntity> GetLinksTable()
         {
-            var entities = Storage.LinkTable.ExecuteQuery(new TableQuery<WebPageEntity>()).ToArray();
             List<WebPageEntity> result = new List<WebPageEntity>();
-            foreach(WebPageEntity entity in entities)
+            var entities = Storage.LinkTable.ExecuteQuery(new TableQuery<WebPageEntity>()).ToArray();
+            foreach (WebPageEntity entity in entities)
             {
                 result.Add(entity);
             }

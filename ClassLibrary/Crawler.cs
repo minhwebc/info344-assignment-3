@@ -15,6 +15,8 @@ using Microsoft.Azure;
 using System.Threading;
 using Newtonsoft.Json;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 
 namespace ClassLibrary {
     public class Crawler
@@ -29,7 +31,8 @@ namespace ClassLibrary {
         private int counterTable;
         private int numberOfUrlsCrawled;
         private static EventWaitHandle myWaitHandle;
-        private int errorNumber; 
+        private int errorNumber;
+        private string error;
 
         public Crawler()
         {
@@ -45,9 +48,11 @@ namespace ClassLibrary {
             counterTable = 0;
             numberOfUrlsCrawled = 0;
             errorNumber = 0;
+            error = "";
             dashboard = new Dashboard();
-            updateDashboard();
             ThreadPool.SetMaxThreads(10, 10);
+            ServicePointManager.Expect100Continue = false;
+            System.Net.ServicePointManager.DefaultConnectionLimit = 100;
         }
 
         /// <summary>
@@ -92,7 +97,7 @@ namespace ClassLibrary {
             Uri uri = new Uri(url);
             if (url.EndsWith("robots.txt"))
             {
-                ThreadPool.QueueUserWorkItem(o => CrawlRobots(uri));
+                CrawlRobots(uri);
             }
             else
             {
@@ -114,6 +119,23 @@ namespace ClassLibrary {
             
         }
 
+        private string Hash(string input)
+        {
+            using (SHA1Managed sha1 = new SHA1Managed())
+            {
+                var hash = sha1.ComputeHash(Encoding.UTF8.GetBytes(input));
+                var sb = new StringBuilder(hash.Length * 2);
+
+                foreach (byte b in hash)
+                {
+                    // can be "x2" if you want lowercase
+                    sb.Append(b.ToString("X2"));
+                }
+
+                return sb.ToString();
+            }
+        }
+
         /// <summary>
         /// Crawl robot sites
         /// </summary>
@@ -131,11 +153,11 @@ namespace ClassLibrary {
                     {
                         if (components[2].Contains("nba"))
                         {
-                            ThreadPool.QueueUserWorkItem(o => ProcessSiteMaps(components[1] + ":" + components[2]));
+                            ProcessSiteMaps(components[1] + ":" + components[2]);
                         }
                     }else
                     {
-                        ThreadPool.QueueUserWorkItem(o => ProcessSiteMaps(components[1] + ":" + components[2]));
+                        ProcessSiteMaps(components[1] + ":" + components[2]);
                     }
                     
                 }else if (components[0].Equals("Disallow"))
@@ -194,7 +216,12 @@ namespace ClassLibrary {
                                 ProcessSiteMaps(link);
                             }
                         }
-                        catch (Exception e) { };
+                        catch (Exception e)
+                        {
+                            System.Diagnostics.Debug.WriteLine(e);
+                            error = e.ToString();
+                            updateDashboard();
+                        };
                     }
                     else if (link.Contains("bleacherreport.com"))
                     {
@@ -328,66 +355,84 @@ namespace ClassLibrary {
                 if (title != null)
                 {
                     string pageTitle = title.InnerText;
+                    string[] titleArray = pageTitle.Split(' ');
                     Uri link = new Uri(url);
                     var text = htmlText.DocumentNode.Descendants()
                                   .Where(x => x.NodeType == HtmlNodeType.Text && x.InnerText.Trim().Length > 0)
                                   .Select(x => x.InnerText.Trim());
-                    WebPageEntity newPage = new WebPageEntity(pageTitle, link.Authority);
-                    newPage.Title = pageTitle;
-                    newPage.Url = url;
-                    newPage.Text = GetPlainTextFromHtml(htmlText.DocumentNode.OuterHtml);
-                    DateTime timeNow = DateTime.Now;
-                    newPage.Date = timeNow.ToString("en-US");
-                    TableOperation insertOperation = TableOperation.Insert(newPage);
-                    try
+                    foreach (string titleWord in titleArray)
                     {
-                        Interlocked.Add(ref counterTable, 1);
-                        Storage.LinkTable.Execute(insertOperation);
-                    }
-                    catch (Exception error)
-                    {
-
+                        WebPageEntity newPage = new WebPageEntity(RemoveSpecialCharacters(titleWord), Hash(url));
+                        newPage.Title = pageTitle;
+                        newPage.Url = url;
+                        newPage.Text = GetPlainTextFromHtml(htmlText.DocumentNode.OuterHtml);
+                        DateTime timeNow = DateTime.Now;
+                        newPage.Date = timeNow.ToString("en-US");
+                        TableOperation insertOperation = TableOperation.Insert(newPage);
+                        try
+                        {
+                            Storage.LinkTable.Execute(insertOperation);
+                        }
+                        catch (Exception exc)
+                        {
+                            if(exc == null)
+                            {
+                                Interlocked.Add(ref counterTable, 1);
+                            }
+                            System.Diagnostics.Debug.WriteLine(exc);
+                            error = exc.ToString();
+                            updateDashboard();
+                        }
                     }
                 }
                 //Find all the link in the current page and add them to the queue
                 foreach (HtmlNode link in linkNodes)
                 {
-                    ThreadPool.QueueUserWorkItem(o => AddLink(link, url));
-                }
-            }
-        }
-
-        public void AddUrl(HtmlNode title, string url, HtmlDocument htmlText)
-        {
-            
-        }
-
-        public void AddLink(HtmlNode link, string url)
-        {
-            if (CrawlerState.Equals("Idle"))
-            {
-                return;
-            }
-            HtmlAttribute href = link.Attributes["href"];
-            try
-            {
-                string pageLink = href.Value;
-                Uri FullUrl = new Uri(url);
-                pageLink = CleanUrl(pageLink, FullUrl.Authority);
-                if (pageLink != "")
-                {
-                    if (!visitedLinks.ContainsKey(pageLink))
+                    if (CrawlerState.Equals("Idle"))
                     {
-                        CloudQueueMessage msg = new CloudQueueMessage(pageLink);
-                        Storage.LinkQueue.AddMessage(msg);
+                        return;
+                    }
+                    HtmlAttribute href = link.Attributes["href"];
+                    try
+                    {
+                        if (href != null)
+                        {
+                            string pageLink = href.Value;
+                            Uri FullUrl = new Uri(url);
+                            pageLink = CleanUrl(pageLink, FullUrl.Authority);
+                            if (pageLink != "")
+                            {
+                                if (!visitedLinks.ContainsKey(pageLink))
+                                {
+                                    CloudQueueMessage msg = new CloudQueueMessage(pageLink);
+                                    Storage.LinkQueue.AddMessage(msg);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        System.Diagnostics.Debug.WriteLine(exc);
+                        error = exc.ToString();
+                        updateDashboard();
                     }
                 }
             }
-            catch (Exception exc)
-            {
-
-            }
         }
+
+        public string RemoveSpecialCharacters(string str)
+        {
+            StringBuilder sb = new StringBuilder();
+            foreach (char c in str)
+            {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+                {
+                    sb.Append(c);
+                }
+            }
+            return sb.ToString();
+        }
+
         /// <summary>
         /// Return the summary of the current dahsboard
         /// </summary>  
@@ -404,6 +449,7 @@ namespace ClassLibrary {
             dashboard.SizeOfQueue = (int)link.ApproximateMessageCount;
             dashboard.SizeOfTable = counterTable;
             dashboard.NumberOfUrlsCrawled = numberOfUrlsCrawled;
+            dashboard.error = error;
             TableOperation insertOperation = TableOperation.InsertOrReplace(dashboard);
             Storage.DashboardTable.Execute(insertOperation);
         }
@@ -441,26 +487,36 @@ namespace ClassLibrary {
         /// <returns></returns>
         public HtmlDocument GetWebText(string url)
         {
-            HttpWebRequest request = (HttpWebRequest)HttpWebRequest.Create(url);
-            request.Proxy = null;
-            request.UserAgent = "A Web Crawler";
-            HtmlDocument doc = null;
             try
             {
-                WebResponse response = request.GetResponse();
-                Stream streamResponse = response.GetResponseStream();
-                StreamReader sreader = new StreamReader(streamResponse);
-                string s = "";
-                s = sreader.ReadToEnd();
-                doc = new HtmlDocument();
-                doc.LoadHtml(s);
-            }
-            catch (WebException e)
+                HttpWebRequest request = (HttpWebRequest)HttpWebRequest.Create(url);
+                request.Proxy = null;
+                request.UserAgent = "A Web Crawler";
+                HtmlDocument doc = null;
+                try
+                {
+                    HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+                    DateTime abcd = response.LastModified;
+
+                    Stream streamResponse = response.GetResponseStream();
+                    StreamReader sreader = new StreamReader(streamResponse);
+                    string s = "";
+                    s = sreader.ReadToEnd();
+                    hing = abcd;
+                    doc.LoadHtml(s);
+                }
+                catch (WebException e)
+                {
+                    Interlocked.Add(ref errorNumber, 1);
+                    errorsUrl.Enqueue(url + " | " + "Error code: " + e);
+                }
+                return doc;
+            }catch(Exception e)
             {
-                Interlocked.Add(ref errorNumber, 1);
-                errorsUrl.Enqueue(url + " | " + "Error code: "+ e);
+                error = e.ToString();
+                updateDashboard();
             }
-            return doc;
+            return null;
         }
 
         /// <summary>

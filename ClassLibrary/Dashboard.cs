@@ -26,5 +26,6 @@ namespace ClassLibrary
         public string CrawlingFor { get; set; }
         public string BeganCrawlingAt { get; set; }
         public int errorNumber { get; set; }
+        public string error { get; set; }
     }
 }
