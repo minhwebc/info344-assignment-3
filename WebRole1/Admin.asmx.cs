@@ -1,13 +1,9 @@
 ﻿using ClassLibrary;
-using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.Table;
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading;
-using System.Web;
 using System.Web.Script.Serialization;
 using System.Web.Script.Services;
 using System.Web.Services;
@@ -29,16 +25,22 @@ namespace WebRole1
         private static Crawler crawler = new Crawler();
 
         [WebMethod]
-        public string HelloWorld()
-        {
-            return "Hello World";
-        }
-
-        [WebMethod]
         public int GetCurrentThread()
         {
             int number = Process.GetCurrentProcess().Threads.Count;
             return number;
+        }
+
+        [WebMethod]
+        public List<WebPageEntity> GetLinks(string input)
+        {
+            List<WebPageEntity> result = new List<WebPageEntity>();
+            var entities = Storage.LinkTable.ExecuteQuery(new TableQuery<WebPageEntity>().Where(TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, input)));
+            foreach (WebPageEntity entity in entities)
+            {
+                result.Add(entity);
+            }
+            return result;
         }
 
         [WebMethod]

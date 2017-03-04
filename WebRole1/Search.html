@@ -1,0 +1,91 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title></title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.1.1.js"
+            integrity="sha256-16cdPddA6VdVInumRGo6IbivbERE8p7CQR3HzTBuELA="
+            crossorigin="anonymous"></script>
+</head>
+<body>
+    <br />
+    <div class="container">
+        <input id="inputSearch" class="form-control" type="text" style="display:table-cell; width:100%" />
+        <button style="margin-top: 10px;" type="submit" class="btn btn-primary pull-right" onclick="testJson()">Submit</button>
+        <div class="row">
+            <div class="col-sm-6">
+                <h1>Results</h1>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-sm-6" id="jsonDiv">
+
+            </div>
+            <div class="col-sm-6" id="suggestions">
+            </div>
+        </div>
+    </div>
+    <script>
+        $('#inputSearch').bind('input', function () {
+            var prefix = $("#inputSearch").val();
+            console.log(prefix);
+
+            $("#jsonDiv").empty();
+            if (prefix.length != 0) {
+                $.ajax({
+                    type: "POST",
+                    url: "getQuerySuggestions.asmx/SearchTrie",
+                    data: "{prefix: '" + prefix + "' }",
+                    contentType: "application/json; charset=utf-8",
+                    dataType: "json",
+                    success: function (msg) {
+                        $("#jsonDiv").empty();
+                        var result = JSON.parse(msg.d);
+                        console.log(result);
+                        for(var i = 0; i < result.length; i++){
+                            $("#jsonDiv").append("<b>"+result[i]+"</b><br>");
+                        }
+                        if (result.length < 10) {
+
+                            $.ajax({
+                                type: "POST",
+                                url: "getQuerySuggestions.asmx/SearchSuggestions",
+                                data: "{prefix: '" + prefix + "' }",
+                                contentType: "application/json; charset=utf-8",
+                                dataType: "json",
+                                success: function (msg) {
+                                    $("#suggestions").empty();
+                                    $("#suggestions").append("<h1>Suggestions</h1>");
+                                    var result = JSON.parse(msg.d);
+                                    for (var i = 0; i < result.length; i++) {
+                                        $("#suggestions").append("<b>" + result[i] + "</b><br>");
+                                    }
+                                }
+                            })
+                        } else {
+                            console.log("here")
+                        }
+                    }
+                })
+            }
+        });
+        function testJson() {
+            var prefix = $("#inputSearch").val();
+            $("#jsonDiv").empty();
+            if (prefix.length != 0) {
+                $.ajax({
+                    type: "POST",
+                    url: "getQuerySuggestions.asmx/AddWord",
+                    data: "{prefix: '" + prefix + "' }",
+                    contentType: "application/json; charset=utf-8",
+                    dataType: "json",
+                    success: function (msg) {
+                        console.log(msg);
+                    }
+                })
+            }
+        }
+    </script>
+</body>
+
+</html>

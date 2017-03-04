@@ -57,10 +57,12 @@
   <ItemGroup>
     <Folder Include="Profiles" />
     <Folder Include="WebRole1Content\" />
+    <Folder Include="WebRole2Content\" />
     <Folder Include="WorkerRole1Content\" />
   </ItemGroup>
   <ItemGroup>
     <DiagnosticsConfiguration Include="WebRole1Content\diagnostics.wadcfgx" />
+    <DiagnosticsConfiguration Include="WebRole2Content\diagnostics.wadcfgx" />
     <DiagnosticsConfiguration Include="WorkerRole1Content\diagnostics.wadcfgx" />
   </ItemGroup>
   <ItemGroup>

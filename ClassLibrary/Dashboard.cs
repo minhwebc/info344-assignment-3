@@ -27,5 +27,7 @@ namespace ClassLibrary
         public string BeganCrawlingAt { get; set; }
         public int errorNumber { get; set; }
         public string error { get; set; }
+        public int numberOfTitle { get; set; }
+        public string lastTitle { get; set; }
     }
 }

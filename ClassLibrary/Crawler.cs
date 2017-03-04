@@ -16,7 +16,7 @@ using System.Threading;
 using Newtonsoft.Json;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace ClassLibrary {
     public class Crawler
@@ -50,7 +50,6 @@ namespace ClassLibrary {
             errorNumber = 0;
             error = "";
             dashboard = new Dashboard();
-            ThreadPool.SetMaxThreads(10, 10);
             ServicePointManager.Expect100Continue = false;
             System.Net.ServicePointManager.DefaultConnectionLimit = 100;
         }
@@ -341,13 +340,23 @@ namespace ClassLibrary {
             last10Urls.Enqueue(url);
             if (!visitedLinks.ContainsKey(url))
             {
-                visitedLinks.TryAdd(url, ""); 
+                visitedLinks.TryAdd(url, "");
                 HtmlDocument htmlText = GetWebText(url);
                 if (htmlText == null)
                     return;
 
                 HtmlNode title = htmlText.DocumentNode.SelectSingleNode("//title");
                 HtmlNodeCollection linkNodes = htmlText.DocumentNode.SelectNodes("//a");
+                HtmlNode mdnode = htmlText.DocumentNode.SelectSingleNode("//meta[@name='lastmod']");
+                DateTime lastModified = DateTime.Now;
+                if (mdnode != null)
+                {
+                    HtmlAttribute desc;
+                    desc = mdnode.Attributes["content"];
+                    string fulldescription = desc.Value;
+                    lastModified = DateTime.Parse(fulldescription);
+                }
+
                 if (linkNodes == null)
                 {
                     return;
@@ -362,23 +371,26 @@ namespace ClassLibrary {
                                   .Select(x => x.InnerText.Trim());
                     foreach (string titleWord in titleArray)
                     {
-                        WebPageEntity newPage = new WebPageEntity(RemoveSpecialCharacters(titleWord), Hash(url));
+                        string pk = RemoveSpecialCharacters(titleWord);
+                        pk = pk.ToLower();
+                        WebPageEntity newPage = new WebPageEntity(pk, Hash(url));
                         newPage.Title = pageTitle;
                         newPage.Url = url;
-                        newPage.Text = GetPlainTextFromHtml(htmlText.DocumentNode.OuterHtml);
-                        DateTime timeNow = DateTime.Now;
-                        newPage.Date = timeNow.ToString("en-US");
+                        string textBody = GetPlainTextFromHtml(htmlText.DocumentNode.OuterHtml);
+                        int count = System.Text.ASCIIEncoding.Unicode.GetByteCount(textBody);
+                        if (count < 60000)
+                            newPage.Text = textBody;
+                        else
+                            newPage.Text = "";
+                        newPage.Date = lastModified.ToString("MM/dd/yyyy HH:mmtt", new CultureInfo("en-US"));
                         TableOperation insertOperation = TableOperation.Insert(newPage);
                         try
                         {
+                            Interlocked.Add(ref counterTable, 1);
                             Storage.LinkTable.Execute(insertOperation);
                         }
                         catch (Exception exc)
                         {
-                            if(exc == null)
-                            {
-                                Interlocked.Add(ref counterTable, 1);
-                            }
                             System.Diagnostics.Debug.WriteLine(exc);
                             error = exc.ToString();
                             updateDashboard();
@@ -425,7 +437,7 @@ namespace ClassLibrary {
             StringBuilder sb = new StringBuilder();
             foreach (char c in str)
             {
-                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+                if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
                 {
                     sb.Append(c);
                 }
@@ -487,36 +499,50 @@ namespace ClassLibrary {
         /// <returns></returns>
         public HtmlDocument GetWebText(string url)
         {
+            HtmlDocument doc = null;
+            WebResponse response = null;
+            StreamReader sreader = null;
             try
             {
                 HttpWebRequest request = (HttpWebRequest)HttpWebRequest.Create(url);
+                request.KeepAlive = false;
+                request.ProtocolVersion = HttpVersion.Version10;
+                request.ServicePoint.ConnectionLimit = 1;
                 request.Proxy = null;
+                request.Method = "GET";
                 request.UserAgent = "A Web Crawler";
-                HtmlDocument doc = null;
-                try
+                using (response = request.GetResponse())
                 {
-                    HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                    DateTime abcd = response.LastModified;
+                    using (Stream streamResponse = response.GetResponseStream())
+                    {
+                        using (sreader = new StreamReader(streamResponse))
+                        {
+                            string s = "";
 
-                    Stream streamResponse = response.GetResponseStream();
-                    StreamReader sreader = new StreamReader(streamResponse);
-                    string s = "";
-                    s = sreader.ReadToEnd();
-                    hing = abcd;
-                    doc.LoadHtml(s);
+                            s = sreader.ReadToEnd();
+
+                            doc = new HtmlDocument();
+                            doc.LoadHtml(s);
+
+                        }
+                    }
                 }
-                catch (WebException e)
-                {
-                    Interlocked.Add(ref errorNumber, 1);
-                    errorsUrl.Enqueue(url + " | " + "Error code: " + e);
-                }
-                return doc;
-            }catch(Exception e)
-            {
-                error = e.ToString();
-                updateDashboard();
             }
-            return null;
+            catch (WebException e)
+            {
+                System.Diagnostics.Debug.WriteLine(e);
+                Interlocked.Add(ref errorNumber, 1);
+                errorsUrl.Enqueue(url + " | " + "Error code: " + e);
+            }
+            finally
+            {
+                if (sreader != null)
+                    sreader.Close();
+                if (response != null)
+                    response.Close();
+            }
+            return doc;
+
         }
 
         /// <summary>
@@ -527,7 +553,7 @@ namespace ClassLibrary {
         private string GetPlainTextFromHtml(string htmlString)
         {
             string htmlTagPattern = "<.*?>";
-            var regexCss = new Regex("(\\<script(.+?)\\</script\\>)|(\\<style(.+?)\\</style\\>)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            var regexCss = new Regex("(\\<script(.+?)\\</script\\>)|(\\<style(.+?)\\</style\\>)|(\\<a(.+?)\\</a\\>)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
             htmlString = regexCss.Replace(htmlString, string.Empty);
             htmlString = Regex.Replace(htmlString, htmlTagPattern, string.Empty);
             htmlString = Regex.Replace(htmlString, @"^\s+$[\r\n]*", "", RegexOptions.Multiline);

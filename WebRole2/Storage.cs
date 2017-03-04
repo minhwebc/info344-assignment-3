@@ -8,7 +8,7 @@ using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.Table;
 using Microsoft.WindowsAzure.Storage.Blob;
 
-namespace ClassLibrary
+namespace WebRole2
 {
     public static class Storage
     {
@@ -19,13 +19,5 @@ namespace ClassLibrary
         public static CloudQueue CommandQueue = QueueClient.GetQueueReference("commandqueue");
         public static CloudTable LinkTable = TableClient.GetTableReference("linktablc");
         public static CloudTable DashboardTable = TableClient.GetTableReference("dashboardtable");
-
-        public static void CreateStorage()
-        {
-            LinkQueue.CreateIfNotExists();
-            CommandQueue.CreateIfNotExists();
-            LinkTable.CreateIfNotExists();
-            DashboardTable.CreateIfNotExists();
-        }
     }
 }
