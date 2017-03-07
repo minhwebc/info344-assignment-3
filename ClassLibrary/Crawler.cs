@@ -17,6 +17,7 @@ using Newtonsoft.Json;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Globalization;
+using System.IO.Compression;
 
 namespace ClassLibrary {
     public class Crawler
@@ -83,6 +84,28 @@ namespace ClassLibrary {
             CrawlerState = "Idle";
         }
 
+
+        public void Resume()
+        {
+            CrawlerState = "Crawling";
+            DateTime begin = DateTime.Now;
+            TimeSpan time = DateTime.Now.Subtract(begin);
+            dashboard.CrawlingFor = time.ToString();
+            dashboard.BeganCrawlingAt = begin.ToString();
+            TableOperation retrieveOperation = TableOperation.Retrieve<Dashboard>("1", "1");
+            TableResult retrievedResult = Storage.DashboardTable.Execute(retrieveOperation);
+            Dashboard dashboardRetrieved = (Dashboard)retrievedResult.Result;
+            counterTable = dashboardRetrieved.SizeOfTable;
+            numberOfUrlsCrawled = dashboardRetrieved.NumberOfUrlsCrawled;
+            errorNumber = dashboardRetrieved.errorNumber;
+            string[] disallowedUrlsArray = JsonConvert.DeserializeObject<string[]>(dashboardRetrieved.disallowedUrls);
+            foreach(string url in disallowedUrlsArray)
+            {
+                if(!disallowedUrls.Contains(url))
+                    disallowedUrls.Add(url);
+            }
+        }
+
         /// <summary>
         /// Method will crawl the url
         /// </summary>
@@ -100,6 +123,7 @@ namespace ClassLibrary {
             }
             else
             {
+                CrawlerState = "Crawling";
                 ThreadPool.QueueUserWorkItem(o => CrawlPage(uri.AbsoluteUri));
             }
         }
@@ -118,6 +142,11 @@ namespace ClassLibrary {
             
         }
 
+        /// <summary>
+        /// Hashing method used for url
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
         private string Hash(string input)
         {
             using (SHA1Managed sha1 = new SHA1Managed())
@@ -324,6 +353,10 @@ namespace ClassLibrary {
         /// <param name="url"></param>
         public void CrawlPage(string url)
         {
+            if(!url.Contains("cnn") && !url.Contains("bleacherreport"))
+            {
+                return;
+            }
             if (CrawlerState.Equals("Idle"))
             {
                 return;
@@ -366,24 +399,17 @@ namespace ClassLibrary {
                     string pageTitle = title.InnerText;
                     string[] titleArray = pageTitle.Split(' ');
                     Uri link = new Uri(url);
-                    var text = htmlText.DocumentNode.Descendants()
-                                  .Where(x => x.NodeType == HtmlNodeType.Text && x.InnerText.Trim().Length > 0)
-                                  .Select(x => x.InnerText.Trim());
+                    string textBody = GetPlainTextFromHtml(htmlText);
                     foreach (string titleWord in titleArray)
                     {
                         string pk = RemoveSpecialCharacters(titleWord);
                         pk = pk.ToLower();
                         WebPageEntity newPage = new WebPageEntity(pk, Hash(url));
                         newPage.Title = pageTitle;
-                        newPage.Url = url;
-                        string textBody = GetPlainTextFromHtml(htmlText.DocumentNode.OuterHtml);
-                        int count = System.Text.ASCIIEncoding.Unicode.GetByteCount(textBody);
-                        if (count < 60000)
-                            newPage.Text = textBody;
-                        else
-                            newPage.Text = "";
+                        newPage.Url = url;           
+                        newPage.Text = Compress(textBody);
                         newPage.Date = lastModified.ToString("MM/dd/yyyy HH:mmtt", new CultureInfo("en-US"));
-                        TableOperation insertOperation = TableOperation.Insert(newPage);
+                        TableOperation insertOperation = TableOperation.InsertOrReplace(newPage);
                         try
                         {
                             Interlocked.Add(ref counterTable, 1);
@@ -432,6 +458,81 @@ namespace ClassLibrary {
             }
         }
 
+        public string Compress(string text)
+        {
+            byte[] buffer = Encoding.UTF8.GetBytes(text);
+            MemoryStream ms = new MemoryStream();
+            using (GZipStream zip = new GZipStream(ms, CompressionMode.Compress, true))
+            {
+                zip.Write(buffer, 0, buffer.Length);
+            }
+
+            ms.Position = 0;
+            MemoryStream outStream = new MemoryStream();
+
+            byte[] compressed = new byte[ms.Length];
+            ms.Read(compressed, 0, compressed.Length);
+
+            byte[] gzBuffer = new byte[compressed.Length + 4];
+            System.Buffer.BlockCopy(compressed, 0, gzBuffer, 4, compressed.Length);
+            System.Buffer.BlockCopy(BitConverter.GetBytes(buffer.Length), 0, gzBuffer, 0, 4);
+            return Convert.ToBase64String(gzBuffer);
+        }
+
+        /// <summary>
+        /// Method will filter out all the html tags, script tags, and style tags and just get the plain html text
+        /// </summary>
+        /// <param name="htmlString">html string</param>
+        /// <returns></returns>
+        private string GetPlainTextFromHtml(HtmlDocument htmlText)
+        {
+            HtmlNode body = htmlText.DocumentNode.SelectSingleNode("//body");
+            HtmlNode header = body.SelectSingleNode("//header");
+            HtmlNode footer = body.SelectSingleNode("//footer");
+            if(header != null)
+                header.Remove();
+            if (footer != null)
+                footer.Remove();
+            var divs = body.SelectNodes("//div");
+            if (divs != null)
+            {
+                foreach (var tag in divs)
+                {
+                    if (tag.Attributes["class"] != null && tag.Attributes["class"].Value.Contains("nav"))
+                    {
+                        tag.Remove();
+                    }
+                    else if (tag.Attributes["id"] != null && tag.Attributes["id"].Value.Contains("breaking-news"))
+                    {
+                        tag.Remove();
+                    }
+                    else if (tag.Attributes["id"] != null && tag.Attributes["id"].Value.Contains("nav"))
+                    {
+                        tag.Remove();
+                    }
+                    else if (tag.Attributes["class"] != null && tag.Attributes["class"].Value.Contains("header"))
+                    {
+                        tag.Remove();
+                    }
+                    else if (tag.Attributes["id"] != null && tag.Attributes["id"].Value.Contains("header"))
+                    {
+                        tag.Remove();
+                    }
+                }
+            }
+            string htmlString = body.OuterHtml;
+            string htmlTagPattern = "<.*?>";
+            var regexCss = new Regex("(\\<script(.+?)\\</script\\>)|(\\<style(.+?)\\</style\\>)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            htmlString = regexCss.Replace(htmlString, string.Empty);
+            htmlString = Regex.Replace(htmlString, htmlTagPattern, string.Empty);
+            htmlString = Regex.Replace(htmlString, @"^\s+$[\r\n]*", "", RegexOptions.Multiline);
+            htmlString = Regex.Replace(htmlString, "<!--.*?-->", String.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            htmlString = htmlString.Replace("&nbsp;", string.Empty);
+            htmlString = htmlString.Replace("\t", string.Empty);
+            htmlString = htmlString.Replace("\n", string.Empty);
+            return htmlString;
+        }
+
         public string RemoveSpecialCharacters(string str)
         {
             StringBuilder sb = new StringBuilder();
@@ -451,6 +552,9 @@ namespace ClassLibrary {
         /// <returns></returns>
         public void updateDashboard()
         {
+            TableOperation retrieveOperation = TableOperation.Retrieve<Dashboard>("1", "1");
+            TableResult retrievedResult = Storage.DashboardTable.Execute(retrieveOperation);
+            Dashboard dashboard1 = (Dashboard)retrievedResult.Result;
             GetPerfCounters();
             CloudQueue link = Storage.LinkQueue;
             link.FetchAttributes();
@@ -462,6 +566,10 @@ namespace ClassLibrary {
             dashboard.SizeOfTable = counterTable;
             dashboard.NumberOfUrlsCrawled = numberOfUrlsCrawled;
             dashboard.error = error;
+            dashboard.lastTitle = dashboard1.lastTitle;
+            dashboard.numberOfTitle = dashboard1.numberOfTitle;
+            string[] disallowUrlsSnapShot = disallowedUrls.ToArray();
+            dashboard.disallowedUrls = JsonConvert.SerializeObject(disallowUrlsSnapShot);
             TableOperation insertOperation = TableOperation.InsertOrReplace(dashboard);
             Storage.DashboardTable.Execute(insertOperation);
         }
@@ -492,41 +600,32 @@ namespace ClassLibrary {
             }
         }
 
-        /// <summary>
-        /// Get the content of a page 
-        /// </summary>
-        /// <param name="url"></param>
-        /// <returns></returns>
         public HtmlDocument GetWebText(string url)
         {
+            HttpWebRequest request = (HttpWebRequest)HttpWebRequest.Create(url);
+            request.KeepAlive = false;
+            request.ProtocolVersion = HttpVersion.Version10;
+            request.ServicePoint.ConnectionLimit = 1;
+            request.Proxy = null;
+            request.UserAgent = "A Web Crawler";
+            request.Timeout = 3600000;
             HtmlDocument doc = null;
-            WebResponse response = null;
-            StreamReader sreader = null;
             try
             {
-                HttpWebRequest request = (HttpWebRequest)HttpWebRequest.Create(url);
-                request.KeepAlive = false;
-                request.ProtocolVersion = HttpVersion.Version10;
-                request.ServicePoint.ConnectionLimit = 1;
-                request.Proxy = null;
-                request.Method = "GET";
-                request.UserAgent = "A Web Crawler";
-                using (response = request.GetResponse())
+                WebResponse response = request.GetResponse();
+                Stream streamResponse = response.GetResponseStream();
+                StreamReader sreader = new StreamReader(streamResponse);
+                string s = "";
+                try
                 {
-                    using (Stream streamResponse = response.GetResponseStream())
-                    {
-                        using (sreader = new StreamReader(streamResponse))
-                        {
-                            string s = "";
-
-                            s = sreader.ReadToEnd();
-
-                            doc = new HtmlDocument();
-                            doc.LoadHtml(s);
-
-                        }
-                    }
+                    s = sreader.ReadToEnd();
                 }
+                catch(Exception e)
+                {
+                    System.Diagnostics.Debug.WriteLine(e);
+                }
+                doc = new HtmlDocument();
+                doc.LoadHtml(s);
             }
             catch (WebException e)
             {
@@ -534,32 +633,7 @@ namespace ClassLibrary {
                 Interlocked.Add(ref errorNumber, 1);
                 errorsUrl.Enqueue(url + " | " + "Error code: " + e);
             }
-            finally
-            {
-                if (sreader != null)
-                    sreader.Close();
-                if (response != null)
-                    response.Close();
-            }
             return doc;
-
-        }
-
-        /// <summary>
-        /// Method will filter out all the html tags, script tags, and style tags and just get the plain html text
-        /// </summary>
-        /// <param name="htmlString">html string</param>
-        /// <returns></returns>
-        private string GetPlainTextFromHtml(string htmlString)
-        {
-            string htmlTagPattern = "<.*?>";
-            var regexCss = new Regex("(\\<script(.+?)\\</script\\>)|(\\<style(.+?)\\</style\\>)|(\\<a(.+?)\\</a\\>)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            htmlString = regexCss.Replace(htmlString, string.Empty);
-            htmlString = Regex.Replace(htmlString, htmlTagPattern, string.Empty);
-            htmlString = Regex.Replace(htmlString, @"^\s+$[\r\n]*", "", RegexOptions.Multiline);
-            htmlString = htmlString.Replace("&nbsp;", string.Empty);
-
-            return htmlString;
         }
 
         /// <summary>

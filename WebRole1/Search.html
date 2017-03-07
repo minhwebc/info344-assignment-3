@@ -6,17 +6,43 @@
     <script src="https://code.jquery.com/jquery-3.1.1.js"
             integrity="sha256-16cdPddA6VdVInumRGo6IbivbERE8p7CQR3HzTBuELA="
             crossorigin="anonymous"></script>
+    <style>
+        h1,h2,h3,h4,h5{
+            margin: 0px;
+        }
+        #foundPlayer{
+	        background-color: gainsboro;
+	        margin: auto;
+        }
+        .content{
+            padding-top: 30px;
+        }
+        .content h2{
+	        font-weight: bold;
+        }
+
+        .content p{
+	        margin: 0px;
+	        font-size: 22px;
+	        width: 19%;
+	        display: inline-block;
+	        vertical-align: top;
+	        text-align: center;
+	        font-weight: bolder;
+        }
+
+        .score{
+	        background-color: gray;
+	        color: white;
+	        padding: 0 30px;
+}
+    </style>
 </head>
 <body>
-    <br />
+    <script type="text/javascript" src="//cdn.chitika.net/getads.js" async></script>
     <div class="container">
         <input id="inputSearch" class="form-control" type="text" style="display:table-cell; width:100%" />
         <button style="margin-top: 10px;" type="submit" class="btn btn-primary pull-right" onclick="testJson()">Submit</button>
-        <div class="row">
-            <div class="col-sm-6">
-                <h1>Results</h1>
-            </div>
-        </div>
         <div class="row">
             <div class="col-sm-6" id="jsonDiv">
 
@@ -24,7 +50,26 @@
             <div class="col-sm-6" id="suggestions">
             </div>
         </div>
+        <br />
+        <div id="foundPlayer">
+
+        </div>
+        <div id="foundUrls">
+
+        </div>
     </div>
+    <div id="ad">
+
+    </div>
+    <script type="text/javascript">
+  ( function() {
+    if (window.CHITIKA === undefined) { window.CHITIKA = { 'units' : [] }; };
+    var unit = {"calltype":"async[2]","publisher":"minhwebc","width":650,"height":250,"sid":"Chitika Default"};
+    var placement_id = window.CHITIKA.units.length;
+    window.CHITIKA.units.push(unit);
+    $("#ad").append('<div id="chitikaAdBlock-' + placement_id + '"></div>');
+}());
+    </script>
     <script>
         $('#inputSearch').bind('input', function () {
             var prefix = $("#inputSearch").val();
@@ -45,45 +90,79 @@
                         for(var i = 0; i < result.length; i++){
                             $("#jsonDiv").append("<b>"+result[i]+"</b><br>");
                         }
-                        if (result.length < 10) {
-
-                            $.ajax({
-                                type: "POST",
-                                url: "getQuerySuggestions.asmx/SearchSuggestions",
-                                data: "{prefix: '" + prefix + "' }",
-                                contentType: "application/json; charset=utf-8",
-                                dataType: "json",
-                                success: function (msg) {
-                                    $("#suggestions").empty();
-                                    $("#suggestions").append("<h1>Suggestions</h1>");
-                                    var result = JSON.parse(msg.d);
-                                    for (var i = 0; i < result.length; i++) {
-                                        $("#suggestions").append("<b>" + result[i] + "</b><br>");
-                                    }
-                                }
-                            })
-                        } else {
-                            console.log("here")
-                        }
                     }
                 })
             }
         });
         function testJson() {
-            var prefix = $("#inputSearch").val();
-            $("#jsonDiv").empty();
-            if (prefix.length != 0) {
+            var val = $("#inputSearch").val();
+            if (val.length != 0) {
+                $.ajax({
+                    crossDomain: true,
+                    contentType: "application/json; charset=utf-8",
+                    url: "http://ec2-54-212-232-252.us-west-2.compute.amazonaws.com/form.php",
+                    data: { player_name: val },
+                    dataType: "jsonp",
+                    success: function (player) {
+                        console.log(player);
+                        $("#foundPlayer").empty();
+                        if (player != null) {
+                            var url = 'https://nba-players.herokuapp.com/players/' + player.Lname.toLowerCase() + '/' + player.Fname.toLowerCase();
+                            var row = document.createElement("div");
+                            row.setAttribute("class", "row");
+                            var div = document.createElement("div");
+                            div.setAttribute("class", "row");
+                            var imageDiv = document.createElement("div");
+                            imageDiv.setAttribute("class", "col-sm-4");
+                            var image = document.createElement("img");
+                            image.src = url;
+                            image.alt = "player picture not found";
+                            imageDiv.appendChild(image);
+                            div.appendChild(imageDiv);
+                            var contentDiv = document.createElement("div");
+                            contentDiv.setAttribute("class", "col-sm-7 content")
+                            var name = document.createElement("h2");
+                            name.innerHTML = player.Name;
+                            contentDiv.appendChild(name);
+                            var team = document.createElement("h4");
+                            team.innerHTML = "Team: " + player.Team;
+                            contentDiv.appendChild(team);
+                            contentDiv.appendChild(createParagraphElement("<b>GP:</b> <br><span class='score'>" + player.GP + "</span>"));
+                            contentDiv.appendChild(createParagraphElement("<b>FGM:</b> <br><span class='score'>" + player.FG_M + "</span>"));
+                            contentDiv.appendChild(createParagraphElement("<b>PPG:</b> <br><span class='score'>" + player.PPG + "</span>"));
+                            contentDiv.appendChild(createParagraphElement("<b>FTM:</b> <br><span class='score'>" + player.FTM + "</span>"));
+                            contentDiv.appendChild(createParagraphElement("<b>PF:</b> <br><span class='score'>" + player.PF + "</span>"));
+                            div.appendChild(contentDiv);
+                            row.appendChild(div);
+                            document.getElementById('foundPlayer').appendChild(row);
+                        }
+                    }
+                })
                 $.ajax({
                     type: "POST",
-                    url: "getQuerySuggestions.asmx/AddWord",
-                    data: "{prefix: '" + prefix + "' }",
+                    url: "getQuerySuggestions.asmx/GetLinks",
+                    data: "{input: '" + val + "' }",
                     contentType: "application/json; charset=utf-8",
                     dataType: "json",
                     success: function (msg) {
-                        console.log(msg);
+                        $("#foundUrls").empty();
+                        var result = JSON.parse(msg.d);
+                        console.log(result);
+                        for (var i = 0; i < result.length; i++) {
+                            $("#foundUrls").append("<h3><a href='" + result[i].Url + "'>" + result[i].Title + "</a></h3>");
+                            $("#foundUrls").append("<cite>" + result[i].Url + "</cite> <br>");
+                            $("#foundUrls").append(" <b>" + result[i].Date + "</b>");
+                            $("#foundUrls").append("<p>" + result[i].Text.substring(100, result[i].Text.length - 1000) + "...</p>");
+                            $("#foundUrls").append("<br>");
+                        }
                     }
                 })
             }
+        }
+        function createParagraphElement(phrase) {
+            var element = document.createElement("p");
+            element.innerHTML = phrase;
+            return element;
         }
     </script>
 </body>

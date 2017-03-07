@@ -1,5 +1,6 @@
 ﻿using Microsoft.WindowsAzure.Storage.Table;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -22,6 +23,7 @@ namespace ClassLibrary
         public int SizeOfQueue { get; set; }
         public int SizeOfTable { get; set; }
         public int NumberOfUrlsCrawled { get; set; }
+        public string disallowedUrls { get; set; }
         public string errorUris { get; set; }
         public string CrawlingFor { get; set; }
         public string BeganCrawlingAt { get; set; }

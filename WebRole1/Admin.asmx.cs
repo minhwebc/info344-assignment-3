@@ -56,6 +56,12 @@ namespace WebRole1
         }
 
         [WebMethod]
+        public void ResumeCrawling()
+        {
+            Storage.CommandQueue.AddMessage(new CloudQueueMessage("Resume Crawl"));
+        }
+
+        [WebMethod]
         public void StopCrawling()
         {
             Storage.CommandQueue.AddMessage(new CloudQueueMessage("Stop Crawl"));

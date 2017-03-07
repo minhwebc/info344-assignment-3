@@ -110,6 +110,29 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="col-xs-6">
+                                    <div class="box p-a">
+                                        <div class="pull-left m-r">
+
+                                            <i class="fa fa-link text-2x text-info m-y-sm"></i>
+                                        </div>
+                                        <div class="clear">
+                                            <div class="text-muted">#Title</div>
+                                            <h4 class="m-a-0 text-md _600" id="titleNumber">0</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-xs-6">
+                                    <div class="box p-a">
+                                        <div class="pull-left m-r">
+                                            <i class="fa fa-link text-2x text-info m-y-sm"></i>
+                                        </div>
+                                        <div class="clear">
+                                            <div class="text-muted">Last added title</div>
+                                            <h4 class="m-a-0 text-md _600" id="lastTitle">0</h4>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="col-xs-12">
                                     <div class="row-col box-color text-center primary">
                                         <div class="row-cell p-a" style="">
@@ -344,7 +367,8 @@
                   $(".ram").text(result.RamAvailable + " MBytes");
 
                   $("#urlcrawled").text(result.NumberOfUrlsCrawled);
-                  
+                  $("#titleNumber").text(result.numberOfTitle);
+                  $("#lastTitle").text(result.lastTitle);
                   var last10 = JSON.parse(result.last10Urls);
                   last10.reverse();
                   $("#ram").attr("data-percent", result.RamAvailable);

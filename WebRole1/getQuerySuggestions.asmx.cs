@@ -16,6 +16,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.WindowsAzure.Storage.Table;
 using ClassLibrary;
+using System.IO.Compression;
 
 namespace WebRole1
 {
@@ -32,7 +33,8 @@ namespace WebRole1
     {
         private static MyTrie storage;
         private static int numberOfTitle = 0;
-        private string lastTitle;
+        private static string lastTitle;
+        private static Dictionary<string, List<WebPageEntity>> cache = new Dictionary<string, List<WebPageEntity>>();
         /// <summary>
         /// Download the file
         /// </summary>
@@ -94,7 +96,7 @@ namespace WebRole1
                 using (StreamReader reader = new StreamReader(stream))
                 {
                     PerformanceCounter ramCounter = new PerformanceCounter("Memory", "Available MBytes");
-                    while (!reader.EndOfStream && ramCounter.NextValue() > 30)
+                    while (!reader.EndOfStream && ramCounter.NextValue() > 20)
                     {
                         string result = "";
                         try
@@ -133,11 +135,25 @@ namespace WebRole1
         [ScriptMethod(ResponseFormat = ResponseFormat.Json)]
         public string SearchTrie(string prefix)
         {
-            List<string> result = storage.GetWords(prefix.ToLower());
+            List<string> result = new List<string>();
+            try
+            {
+                result = storage.GetWords(prefix.ToLower());
+            }catch(Exception e)
+            {
+
+            }
             return new JavaScriptSerializer().Serialize(result.ToArray());
         }
 
+        [WebMethod]
+        public string ClearCache()
+        {
+            cache.Clear();
+            return "success";
+        }
 
+        [WebMethod]
         public void updateDashboard()
         {
             TableOperation retrieveOperation = TableOperation.Retrieve<Dashboard>("1", "1");
@@ -148,6 +164,7 @@ namespace WebRole1
             TableOperation insertOperation = TableOperation.InsertOrReplace(dashboard);
             Storage.DashboardTable.Execute(insertOperation);
         }
+
         /// <summary>
         /// search all the word suggestion for the word input by the user if there are less than 10 result
         /// </summary>
@@ -201,7 +218,7 @@ namespace WebRole1
                               MatchedCount = wantedWords.Count(ww => words.Contains(ww))
                           } into e
                           where e.MatchedCount > 0
-                          orderby e.MatchedCount descending
+                          orderby e.MatchedCount descending 
                           select e.String;
             foreach(string key in keyList)
             {
@@ -210,36 +227,89 @@ namespace WebRole1
             return result;
         }
 
+        public string Decompress(string compressedText)
+        {
+            byte[] gzBuffer = Convert.FromBase64String(compressedText);
+            using (MemoryStream ms = new MemoryStream())
+            {
+                int msgLength = BitConverter.ToInt32(gzBuffer, 0);
+                ms.Write(gzBuffer, 4, gzBuffer.Length - 4);
+
+                byte[] buffer = new byte[msgLength];
+
+                ms.Position = 0;
+                using (GZipStream zip = new GZipStream(ms, CompressionMode.Decompress))
+                {
+                    zip.Read(buffer, 0, buffer.Length);
+                }
+
+                return Encoding.UTF8.GetString(buffer);
+            }
+        }
+
         [WebMethod]
         [ScriptMethod(ResponseFormat = ResponseFormat.Json)]
         public string GetLinks(string input)
         {
-            List<WebPageEntity> result = new List<WebPageEntity>();
-            input = input.ToLower();
-            string[] word = input.Split(' ');
-            string firstWord = word[0];
-            var entities = Storage.LinkTable.ExecuteQuery(new TableQuery<WebPageEntity>().Where(TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, firstWord)));
-            //foreach (WebPageEntity entity in entities)
-            //{
-            //    result.Add(entity);
-            //}
-            var wantedWords = input.Split();
-            var result1 = from s in entities
-                          let words = s.Title.Split()
-                          select new
-                          {
-                              String = s,
-                              MatchedCount = wantedWords.Count(ww => words.Contains(ww))
-                          } into e
-                          where e.MatchedCount > 0
-                          orderby e.MatchedCount descending
-                          select e.String;
-            IEnumerator<WebPageEntity> _enumerator = result1.GetEnumerator();
-            while (_enumerator.MoveNext())
+            if (cache.ContainsKey(input))
             {
-                result.Add(_enumerator.Current);
+                return new JavaScriptSerializer().Serialize(cache[input].ToArray());
             }
-            return new JavaScriptSerializer().Serialize(result.ToArray());
+            List<WebPageEntity> resultQuery = new List<WebPageEntity>();
+            input = input.ToLower();
+            string[] wordsInput = input.Split(' ');
+            foreach (string word in wordsInput)
+            {
+                TableQuery<WebPageEntity> query = new TableQuery<WebPageEntity>()
+                                                  .Where(TableQuery.GenerateFilterCondition("PartitionKey",
+                                                      QueryComparisons.Equal, word));
+                var list = Storage.LinkTable.ExecuteQuery(query).ToList();
+                foreach(WebPageEntity url in list)
+                {
+                    resultQuery.Add(url);
+                }
+            };
+            long epochTicks = new DateTime(1970, 1, 1).Ticks;
+
+            var results = resultQuery
+                .GroupBy(x => x.Url)
+                .Select(x => new Tuple<WebPageEntity, int>(x.First(), x.ToList().Count()))
+                .OrderByDescending(x => x.Item2)
+                .ThenByDescending(x => DateTime.Parse(x.Item1.Date))
+                .Select(x => x.Item1)
+                .ToList();
+            foreach(WebPageEntity entity in results)
+            {
+                entity.Text = Decompress(entity.Text);
+                foreach (string word in wordsInput)
+                {
+                    try
+                    {
+                        string replacement = string.Format("<b>{0}</b>", "$0");
+                        entity.Text = Regex.Replace(entity.Text, Regex.Escape(word), replacement, RegexOptions.IgnoreCase);
+                        entity.Title = Regex.Replace(entity.Title, Regex.Escape(word), replacement, RegexOptions.IgnoreCase);
+                    }
+                    catch (Exception e)
+                    {
+
+                    }
+                }
+                try
+                {
+                    entity.Text = entity.Text.Substring(0, 2000);
+                }catch(Exception e)
+                {
+                    System.Diagnostics.Debug.WriteLine(e);
+                }
+            }
+            //Dictionary<string, WebPageEntity> result = new Dictionary<string, WebPageEntity>();
+            if(cache.Count >= 100)
+            {
+                cache.Clear();
+            }
+            if(results.Count >= 10)
+                cache.Add(input, results);
+            return new JavaScriptSerializer().Serialize(results.ToArray());
         }
     }
 }

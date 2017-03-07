@@ -38,6 +38,9 @@ namespace WorkerRole1
                             crawler.Stop();
                             crawler.updateDashboard();
                             break;
+                        case "Resume Crawl":
+                            crawler.Resume();
+                            break;
                         default:
                             break;
                     }
